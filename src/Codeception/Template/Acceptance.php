@@ -24,14 +24,14 @@ suites:
                 - WebDriver:
                     url: {{url}}
                     browser: {{browser}}
-                - \Helper\Acceptance
                 
         # add Codeception\Step\Retry trait to AcceptanceTester to enable retries
         step_decorators:
             - Codeception\Step\ConditionalAssertion
             - Codeception\Step\TryTo
             - Codeception\Step\Retry
-                
+
+support_namespace: TestSupport
 extensions:
     enabled: [Codeception\Extension\RunFailed]
 
@@ -44,8 +44,8 @@ gherkin: []
 paths:
     tests: {{baseDir}}
     output: {{baseDir}}/_output
-    data: {{baseDir}}/_data
-    support: {{baseDir}}/_support
+    data: {{baseDir}}/TestSupport/Data
+    support: {{baseDir}}/TestSupport
     envs: {{baseDir}}/_envs
 
 settings:
@@ -58,6 +58,11 @@ EOF;
      */
     protected $firstTest = <<<EOF
 <?php
+
+namespace {{namespace}};
+
+use {{support_namespace}}\AcceptanceTester;
+
 class LoginCest 
 {    
     public function _before(AcceptanceTester \$I)
@@ -96,8 +101,8 @@ EOF;
         $url = $this->ask("Start url for tests", "http://localhost");
 
         $this->createEmptyDirectory($outputDir = $dir . DIRECTORY_SEPARATOR . '_output');
-        $this->createEmptyDirectory($dir . DIRECTORY_SEPARATOR . '_data');
-        $this->createDirectoryFor($supportDir = $dir . DIRECTORY_SEPARATOR . '_support');
+        $this->createDirectoryFor($supportDir = $dir . DIRECTORY_SEPARATOR . 'TestSupport');
+        $this->createEmptyDirectory($supportDir . DIRECTORY_SEPARATOR . 'Data');
         $this->createDirectoryFor($supportDir . DIRECTORY_SEPARATOR . '_generated');
         $this->gitIgnore($outputDir);
         $this->gitIgnore($supportDir . DIRECTORY_SEPARATOR . '_generated');
@@ -114,17 +119,19 @@ EOF;
             ->place('baseDir', $dir)
             ->produce();
 
-        if ($this->namespace !== '') {
-            $namespace = rtrim($this->namespace, '\\');
-            $configFile = "namespace: {$namespace}\n" . $configFile;
-        }
+        $namespace = rtrim($this->namespace, '\\');
+        $configFile = "namespace: $namespace\nsupport_namespace: {$this->supportNamespace}\n" . $configFile;
 
         $this->createFile('codeception.yml', $configFile);
-        $this->createHelper('Acceptance', $supportDir);
         $this->createActor('AcceptanceTester', $supportDir, Yaml::parse($configFile)['suites']['acceptance']);
 
         $this->sayInfo("Created global config codeception.yml inside the root directory");
-        $this->createFile($dir . DIRECTORY_SEPARATOR . 'LoginCest.php', $this->firstTest);
+        $this->createFile($dir . DIRECTORY_SEPARATOR . 'LoginCest.php',
+            (new Template($this->firstTest))
+                ->place('namespace', $this->namespace)
+                ->place('support_namespace', $this->supportNamespace)
+                ->produce()
+        );
         $this->sayInfo("Created a demo test LoginCest.php");
 
         $this->say();

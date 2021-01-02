@@ -16,7 +16,7 @@ class Api extends InitTemplate
     protected $configTemplate = <<<EOF
 # suite config
 suites:
-    api:
+    Api:
         actor: ApiTester
         path: .
         modules:
@@ -28,8 +28,8 @@ suites:
 paths:
     tests: {{baseDir}}
     output: {{baseDir}}/_output
-    data: {{baseDir}}/_data
-    support: {{baseDir}}/_support
+    data: {{baseDir}}/TestSupport/Data
+    support: {{baseDir}}/TestSupport
 
 settings:
     shuffle: false
@@ -41,6 +41,10 @@ EOF;
      */
     protected $firstTest = <<<EOF
 <?php
+namespace {{namespace}};
+
+use {{support_namespace}}\ApiTester;
+
 class ApiCest 
 {    
     public function tryApi(ApiTester \$I)
@@ -68,8 +72,8 @@ EOF;
         }
 
         $this->createEmptyDirectory($outputDir = $dir . DIRECTORY_SEPARATOR . '_output');
-        $this->createEmptyDirectory($dir . DIRECTORY_SEPARATOR . '_data');
-        $this->createDirectoryFor($supportDir = $dir . DIRECTORY_SEPARATOR . '_support');
+        $this->createDirectoryFor($supportDir = $dir . DIRECTORY_SEPARATOR . 'TestSupport');
+        $this->createEmptyDirectory($supportDir . DIRECTORY_SEPARATOR . 'Data');
         $this->createDirectoryFor($supportDir . DIRECTORY_SEPARATOR . '_generated');
         $this->gitIgnore($outputDir);
         $this->gitIgnore($supportDir . DIRECTORY_SEPARATOR . '_generated');
@@ -80,18 +84,22 @@ EOF;
             ->place('baseDir', $dir)
             ->produce();
 
-        if ($this->namespace !== '') {
-            $namespace = rtrim($this->namespace, '\\');
-            $configFile = "namespace: {$namespace}\n" . $configFile;
-        }
+        $namespace = rtrim($this->namespace, '\\');
+        $configFile = "namespace: $namespace\nsupport_namespace: {$this->supportNamespace}\n" . $configFile;
 
         $this->createFile('codeception.yml', $configFile);
-        $this->createHelper('Api', $supportDir);
         $this->createActor('ApiTester', $supportDir, Yaml::parse($configFile)['suites']['api']);
 
 
         $this->sayInfo("Created global config codeception.yml inside the root directory");
-        $this->createFile($dir . DIRECTORY_SEPARATOR . 'ApiCest.php', $this->firstTest);
+
+        $this->createFile($dir . DIRECTORY_SEPARATOR . 'ApiCest.php',
+            (new Template($this->firstTest))
+                ->place('namespace', $this->namespace)
+                ->place('support_namespace', $this->supportNamespace)
+                ->produce()
+        );
+
         $this->sayInfo("Created a demo test ApiCest.php");
 
 

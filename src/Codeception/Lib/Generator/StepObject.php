@@ -66,7 +66,7 @@ EOF;
     {
         $this->settings = $settings;
         $this->name = $this->getShortClassName($name);
-        $this->namespace = $this->getNamespaceString($this->settings['namespace'] . '\\Step\\' . $name);
+        $this->namespace = $this->getNamespaceString($this->supportNamespace() . 'Step\\' . $name);
     }
 
     public function produce(): string
@@ -75,10 +75,8 @@ EOF;
         if (!$actor) {
             throw new ConfigurationException("Steps can't be created for suite without an actor");
         }
-        $ns = $this->getNamespaceString($this->settings['namespace'] . '\\' . $actor . '\\' . $this->name);
-        $ns = ltrim($ns, '\\');
 
-        $extended = '\\' . ltrim('\\' . $this->settings['namespace'] . '\\' . $actor, '\\');
+        $extended = '\\' . ltrim($this->supportNamespace() . $actor, '\\');
 
         return (new Template($this->template))
             ->place('namespace', $this->namespace)

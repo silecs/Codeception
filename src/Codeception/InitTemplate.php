@@ -50,12 +50,17 @@ abstract class InitTemplate
     /**
      * @var string
      */
-    protected $namespace = '';
+    protected $namespace = 'Tests';
 
     /**
      * @var string
      */
     protected $actorSuffix = 'Tester';
+
+    /**
+     * @var string
+     */
+    protected $supportNamespace = 'TestSupport';
 
     /**
      * @var string
@@ -180,14 +185,15 @@ abstract class InitTemplate
     /**
      * Create a helper class inside a directory
      */
-    protected function createHelper(string $name, string $directory): void
+    protected function createHelper(string $name, string $directory, array $settings = [])
     {
         $file = $this->createDirectoryFor(
             $dir = $directory . DIRECTORY_SEPARATOR . "Helper",
             "{$name}.php"
         ) . "{$name}.php";
 
-        $gen = new Helper($name, $this->namespace);
+        $gen = new Helper($settings, $name);
+
         // generate helper
         $this->createFile(
             $file,
