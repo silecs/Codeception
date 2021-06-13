@@ -13,7 +13,7 @@ use Codeception\Util\Annotation;
 use Codeception\Util\ReflectionHelper;
 use Exception;
 use LogicException;
-use PHPUnit\Metadata\CodeCoverageFacade;
+use PHPUnit\Metadata\Api\CodeCoverage;
 use ReflectionMethod;
 use function array_slice;
 use function file;
@@ -227,7 +227,7 @@ class Cest extends Test implements
         if (PHPUnit9::getLinesToBeCoveredMethodExists()) {
             return \PHPUnit\Util\Test::getLinesToBeCovered($class, $method);
         }
-        return (new CodeCoverageFacade)->linesToBeCovered($class, $method);
+        return (new CodeCoverage)->linesToBeCovered($class, $method);
     }
 
     public function getLinesToBeUsed(): array
@@ -238,6 +238,6 @@ class Cest extends Test implements
         if (PHPUnit9::getLinesToBeUsedMethodExists()) {
             return \PHPUnit\Util\Test::getLinesToBeUsed($class, $method);
         }
-        return (new CodeCoverageFacade)->linesToBeUsed($class, $method);
+        return (new CodeCoverage)->linesToBeUsed($class, $method);
     }
 }
