@@ -86,10 +86,17 @@ class Yii1 extends Client
         $_SERVER['SCRIPT_FILENAME'] = $this->appPath;
 
         ob_start();
+        $db = null;
+        try {
+            $db = \Yii::app()->db;
+        } catch (\Throwable $_) {}
         \Yii::setApplication(null);
         \Yii::createApplication($this->appSettings['class'], $this->appSettings['config']);
 
         $app = \Yii::app();
+        if ($db !== null) {
+            $app->setComponent('db', $db);
+        }
         // disabling logging. Logs slow down test execution
         if ($app->hasComponent('log')) {
             foreach ($app->getComponent('log')->routes as $route) {
@@ -105,8 +112,7 @@ class Yii1 extends Client
         $app->run();
 
         if ($app->hasComponent('db')) {
-            // close connection
-            $app->getDb()->setActive(false);
+            \CActiveRecord::$db = null;
             // cleanup metadata cache
             $property = new \ReflectionProperty('CActiveRecord', '_md');
             $property->setAccessible(true);
