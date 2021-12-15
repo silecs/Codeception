@@ -118,12 +118,22 @@ use Yii;
  */
 class Yii1 extends Framework implements PartedModule
 {
+    protected $config = [
+        'appPath' => '',
+        'transaction' => true,
+        'url' => '',
+    ];
 
     /**
      * Application path and url must be set always
      * @var array
      */
     protected $requiredFields = ['appPath', 'url'];
+
+    /**
+     * @var ?TransactionWrapper
+     */
+    private $transactionWrapper;
 
     /**
      * Application settings array('class'=>'YourAppClass','config'=>'YourAppArrayConfig');
@@ -202,6 +212,7 @@ class Yii1 extends Framework implements PartedModule
     public function _before(TestInterface $test)
     {
         $this->_createClient();
+        $this->startTransaction();
     }
 
     public function _after(TestInterface $test)
@@ -211,8 +222,27 @@ class Yii1 extends Framework implements PartedModule
         $_POST = [];
         $_COOKIE = [];
         $_REQUEST = [];
+        $this->rollbackTransaction();
         Yii::app()->session->close();
         parent::_after($test);
+    }
+
+    private function startTransaction(): void
+    {
+        if (!$this->config['transaction']) {
+            return;
+        }
+        $this->transactionWrapper = new TransactionWrapper(Yii::app()->getComponent('db'));
+        $this->transactionWrapper->start();
+    }
+
+    private function rollbackTransaction(): void
+    {
+        if (!$this->config['transaction'] || $this->transactionWrapper === null) {
+            return;
+        }
+        $this->transactionWrapper->rollback();
+        $this->transactionWrapper = null;
     }
 
     /**
@@ -224,7 +254,8 @@ class Yii1 extends Framework implements PartedModule
      */
     private function getDomainRegex($template, $parameters = [])
     {
-        if ($host = parse_url($template, PHP_URL_HOST)) {
+        $host = parse_url($template, PHP_URL_HOST);
+        if ($host) {
             $template = $host;
         }
         if (strpos($template, '<') !== false) {
@@ -261,5 +292,31 @@ class Yii1 extends Framework implements PartedModule
     public function _parts()
     {
         return ['init', 'initialize'];
+    }
+}
+
+class TransactionWrapper
+{
+    /**
+     * @var \components\db\Connection
+     */
+    private $db;
+
+    public function __construct(\components\db\Connection $db)
+    {
+        $this->db = $db;
+    }
+
+    public function start()
+    {
+        $this->db->beginTransaction();
+    }
+
+    public function rollback()
+    {
+        if ($this->db->getPdoInstance()->inTransaction()) {
+            $this->db->getPdoInstance()->rollBack();
+        }
+        $this->db->getCurrentTransaction();
     }
 }
