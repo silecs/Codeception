@@ -5,6 +5,7 @@ use Codeception\Lib\Framework;
 use Codeception\Exception\ModuleConfigException;
 use Codeception\Lib\Interfaces\PartedModule;
 use Codeception\TestInterface;
+use Codeception\Module\Yii1\TransactionTrait;
 use Codeception\Lib\Connector\Yii1 as Yii1Connector;
 use Codeception\Util\ReflectionHelper;
 use Yii;
@@ -118,6 +119,8 @@ use Yii;
  */
 class Yii1 extends Framework implements PartedModule
 {
+    use TransactionTrait;
+
     protected $config = [
         'appPath' => '',
         'transaction' => true,
@@ -131,11 +134,6 @@ class Yii1 extends Framework implements PartedModule
     protected $requiredFields = ['appPath', 'url'];
 
     /**
-     * @var ?TransactionWrapper
-     */
-    private $transactionWrapper;
-
-    /**
      * Application settings array('class'=>'YourAppClass','config'=>'YourAppArrayConfig');
      * @var array
      */
@@ -143,7 +141,35 @@ class Yii1 extends Framework implements PartedModule
 
     private $_appConfig;
 
+    /**
+     * @var array The contents of $_SERVER upon initialization of this object.
+     * This is only used to restore it upon object destruction.
+     * It MUST not be used anywhere else.
+     */
+    private $server;
+
     public function _initialize()
+    {
+        $this->readConfigFiles();
+        $this->defineConstants();
+        $this->server = $_SERVER;
+        $_SERVER = array_merge($_SERVER, $this->getServerGlobal());
+        if (!function_exists('launch_codeception_yii_bridge')) {
+            throw new ModuleConfigException(
+                __CLASS__,
+                "Codeception-Yii Bridge is not launched. In order to run tests you need to install "
+                . "https://github.com/Codeception/YiiBridge Implement function 'launch_codeception_yii_bridge' to "
+                . "load all Codeception overrides"
+            );
+        }
+        $this->createYiiApp();
+    }
+
+    /**
+     * Fill in $this->appSettings and $this->_appConfig from the files
+     * configured by 'appPath' and 'config', respectively.
+     */
+    private function readConfigFiles(): void
     {
         if (!file_exists($this->config['appPath'])) {
             throw new ModuleConfigException(
@@ -152,7 +178,6 @@ class Yii1 extends Framework implements PartedModule
                 "Please provide application bootstrap file configured for testing"
             );
         }
-
         $this->appSettings = include($this->config['appPath']); //get application settings in the entry script
 
         // get configuration from array or file
@@ -168,29 +193,35 @@ class Yii1 extends Framework implements PartedModule
             }
             $this->_appConfig = include($this->appSettings['config']);
         }
+    }
 
-        if (!defined('YII_ENABLE_EXCEPTION_HANDLER')) {
-            define('YII_ENABLE_EXCEPTION_HANDLER', false);
-        }
-        if (!defined('YII_ENABLE_ERROR_HANDLER')) {
-            define('YII_ENABLE_ERROR_HANDLER', false);
-        }
+    private function defineConstants(): void
+    {
+        defined('YII_DEBUG') or define('YII_DEBUG', true);
+        defined('YII_ENV') or define('YII_ENV', 'test');
+        defined('YII_ENABLE_EXCEPTION_HANDLER') or define('YII_ENABLE_EXCEPTION_HANDLER', false);
+        defined('YII_ENABLE_ERROR_HANDLER') or define('YII_ENABLE_ERROR_HANDLER', false);
+    }
 
-        $_SERVER['SCRIPT_NAME'] = parse_url($this->config['url'], PHP_URL_PATH);
-        $_SERVER['SCRIPT_FILENAME'] = $this->config['appPath'];
+    private function getServerGlobal(): array
+    {
+        $entryUrl = $this->config['url'];
+        return [
+            'SCRIPT_FILENAME' => $this->config['appPath'], // server path, e.g. "/srv/www/index-test.php"
+            'SCRIPT_NAME' => parse_url($entryUrl, PHP_URL_PATH), // web path, e.g. "/index-test.php"
+            'SERVER_NAME' => parse_url($entryUrl, PHP_URL_HOST),
+            'SERVER_PORT' => parse_url($entryUrl, PHP_URL_PORT) ?: '80',
+            'HTTPS' => parse_url($entryUrl, PHP_URL_SCHEME) === 'https',
+        ];
+    }
 
-        if (!function_exists('launch_codeception_yii_bridge')) {
-            throw new ModuleConfigException(
-                __CLASS__,
-                "Codeception-Yii Bridge is not launched. In order to run tests you need to install "
-                . "https://github.com/Codeception/YiiBridge Implement function 'launch_codeception_yii_bridge' to "
-                . "load all Codeception overrides"
-            );
-        }
+    private function createYiiApp()
+    {
         launch_codeception_yii_bridge();
-
         Yii::$enableIncludePath = false;
-        Yii::setApplication(null);
+        if ($this->client !== null) {
+            $this->client->resetApplication();
+        }
         Yii::createApplication($this->appSettings['class'], $this->_appConfig);
     }
 
@@ -199,8 +230,7 @@ class Yii1 extends Framework implements PartedModule
      */
     public function _createClient()
     {
-        $this->client = new Yii1Connector();
-        $this->client->setServerParameter("HTTP_HOST", parse_url($this->config['url'], PHP_URL_HOST));
+        $this->client = new Yii1Connector($this->getServerGlobal());
         $this->client->appPath = $this->config['appPath'];
         $this->client->url = $this->config['url'];
         $this->client->appSettings = [
@@ -212,37 +242,28 @@ class Yii1 extends Framework implements PartedModule
     public function _before(TestInterface $test)
     {
         $this->_createClient();
-        $this->startTransaction();
+        $this->createYiiApp();
+        if ($this->config['transaction']) {
+            $this->startTransaction();
+        }
     }
 
     public function _after(TestInterface $test)
     {
         $_SESSION = [];
+        $_FILES = [];
         $_GET = [];
         $_POST = [];
         $_COOKIE = [];
         $_REQUEST = [];
-        $this->rollbackTransaction();
-        Yii::app()->session->close();
+        $_SERVER = array_merge($this->server, $this->getServerGlobal());
+        if ($this->client !== null) {
+            if ($this->config['transaction']) {
+                $this->rollbackTransaction();
+            }
+            $this->client->resetApplication();
+        }
         parent::_after($test);
-    }
-
-    private function startTransaction(): void
-    {
-        if (!$this->config['transaction']) {
-            return;
-        }
-        $this->transactionWrapper = new TransactionWrapper(Yii::app()->getComponent('db'));
-        $this->transactionWrapper->start();
-    }
-
-    private function rollbackTransaction(): void
-    {
-        if (!$this->config['transaction'] || $this->transactionWrapper === null) {
-            return;
-        }
-        $this->transactionWrapper->rollback();
-        $this->transactionWrapper = null;
     }
 
     /**
@@ -292,31 +313,5 @@ class Yii1 extends Framework implements PartedModule
     public function _parts()
     {
         return ['init', 'initialize'];
-    }
-}
-
-class TransactionWrapper
-{
-    /**
-     * @var \components\db\Connection
-     */
-    private $db;
-
-    public function __construct(\components\db\Connection $db)
-    {
-        $this->db = $db;
-    }
-
-    public function start()
-    {
-        $this->db->beginTransaction();
-    }
-
-    public function rollback()
-    {
-        if ($this->db->getPdoInstance()->inTransaction()) {
-            $this->db->getPdoInstance()->rollBack();
-        }
-        $this->db->getCurrentTransaction();
     }
 }

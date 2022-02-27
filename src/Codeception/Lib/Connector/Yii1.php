@@ -134,6 +134,25 @@ class Yii1 extends Client
         return $response;
     }
 
+    public function resetApplication()
+    {
+        codecept_debug('Destroying application');
+        $app = \Yii::app();
+        if ($app !== null) {
+            if ($app->session !== null) {
+                $app->session->close();
+            }
+            $db = $app->getComponent('db');
+            if ($db !== null) {
+                $db->setActive(false);
+            }
+        }
+        \Yii::setApplication(null);
+        \CUploadedFile::reset();
+        \Yii::setLogger(null);
+        gc_collect_cycles();
+    }
+
     /**
      * Set current client headers when terminating yii application (onEndRequest)
      */
