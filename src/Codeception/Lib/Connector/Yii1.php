@@ -158,7 +158,11 @@ class Yii1 extends Client
      */
     public function setHeaders()
     {
-        $this->headers = \Yii::app()->request->getAllHeaders();
+        if (\Yii::app() !== null && \Yii::app()->request !== null) {
+            $this->headers = \Yii::app()->request->getAllHeaders();
+        } else {
+            $this->headers = [];
+        }
     }
 
     /**
